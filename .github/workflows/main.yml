@@ -55,6 +55,7 @@ jobs:
       - name: Compare main.yml files
         id: compare_main_yml_files
         run: |
+          tree -L 3 --dirsfirst
           # 比对当前分支的main.yml文件与上游分支的main.yml文件是否一致
           if cmp -s .github/workflows/main.yml <(git show upstream/main:.github/workflows/main.yml); then
             echo "MAIN_YML_FILES_INCONSISTENT=False" >> $GITHUB_OUTPUT
@@ -69,40 +70,6 @@ jobs:
             "manually! If you don't synchronize, there is a chance that" \
             "your code will have an uncontrollable fatal bug!"
           fi
-
-      - name: Set file extensions
-        run: |
-          # 定义备份和还原的文件后缀列表
-          echo "FILE_EXTENSIONS=.txt .yml" >> $GITHUB_ENV
-          # 以空格分隔多个文件后缀
-
-      - name: Backup local files with specified extensions
-        run: |
-          # 创建一个备份目录，并将当前目录及子目录中的所有指定后缀文件复制到备份目录，并保持路径
-          mkdir -p backup
-          for EXT in $FILE_EXTENSIONS; do
-            rsync -av --include="*/" --include="*$EXT" --exclude="*" ./ backup/
-          done
-
-      - name: List Backup Folder Structure
-        run: |
-          # 列出备份文件夹的文件夹结构
-          echo "Backup Folder Structure:"
-          tree -a backup/
-
-      - name: Force push changes from upstream to current main branch
-        run: |
-          # 将上游main分支的更改强制推送到当前main分支
-          git checkout main
-          git reset --hard upstream/main
-
-      - name: Restore local files with specified extensions and delete backup
-        run: |
-          # 从备份目录将指定后缀文件还原到当前目录及子目录中，然后删除备份目录
-          for EXT in $FILE_EXTENSIONS; do
-            rsync -av --include="*/" --include="*$EXT" --exclude="*" backup/ ./
-          done
-          rm -rf backup
 
       - name: Force push changes to main branch
         run: |
@@ -121,6 +88,9 @@ jobs:
     # 在最新版的Ubuntu系统上运行
     runs-on: ubuntu-latest
 
+    outputs:
+      BEIJING_TIME: ${{ steps.run_main_program.outputs.BEIJING_TIME }}
+
     steps:
       # 使用GitHub Actions提供的动作来检出代码库
       - name: Checkout Repository
@@ -138,6 +108,7 @@ jobs:
           pip install requests rsa pyquery
 
       - name: Run main program
+        id: run_main_program
         env:
           FORCE_PUSH_MESSAGE: ${{ github.event.inputs.force_push_message }}
           MAIN_YML_FILES_INCONSISTENT: ${{ needs.SyncFork.outputs.MAIN_YML_FILES_INCONSISTENT }}
@@ -161,6 +132,7 @@ jobs:
             export FORCE_PUSH_MESSAGE="${{ github.event.inputs.force_push_message }}"
           fi
           export BEIJING_TIME="$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S:%3N')"
+          echo "BEIJING_TIME=$BEIJING_TIME" >> $GITHUB_OUTPUT
           python main.py
           echo "------"
 
@@ -213,24 +185,3 @@ jobs:
           git add .
           git commit -m "Update from GitHub Actions" || true
           git push origin main --force
-
-  # 备份main分支
-  BackupMain:
-    name: BackupMain
-
-    # SyncFork执行完成后运行
-    needs: CheckScores
-
-    # 在最新版的Ubuntu系统上运行
-    runs-on: ubuntu-latest
-
-    steps:
-      # 使用GitHub Actions提供的动作来检出代码库
-      - name: Checkout Repository
-        uses: actions/checkout@main
-
-      - name: Backup Main to ThirtyMinutesAgo
-        run: |
-          # 备份main分支到OldMain分支
-          git checkout -b OldMain|| git checkout OldMain
-          git push -f origin OldMain
